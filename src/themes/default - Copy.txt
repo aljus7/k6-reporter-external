@@ -806,49 +806,12 @@
           <!-- ---- end tab ---- -->
 
           <input type="radio" name="tabs" id="tabfour">
-          <label for="tabfour">
-            <i class="fas fa-bug"></i> External Failures
-          </label>
-
+          <label for="tabfour"><i class="fas fa-square-check"></i> Checks & Groups</label>
           <div class="tab">
-            <h4>External Request Failures</h4>
 
-            <% if (!data.externalFailures || data.externalFailures.length === 0) { %>
-              <p class="note">✅ No external failures recorded.</p>
-            <% } else { %>
-              <table>
-                <thead>
-                  <tr>
-                    <th>Time</th>
-                    <th>Method</th>
-                    <th>URL</th>
-                    <th>Status</th>
-                    <th>Request Body</th>
-                    <th>Response Body</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <% for (const f of data.externalFailures) { %>
-                    <tr class="failed">
-                      <td><%= new Date(f.timestamp).toLocaleString() %></td>
-                      <td><b><%= f.method %></b></td>
-                      <td style="word-break: break-all"><%= f.url %></td>
-                      <td><%= f.status %></td>
-                      <td>
-                        <pre><%= JSON.stringify(f.requestBody, null, 2) %></pre>
-                      </td>
-                      <td>
-                        <pre><%= JSON.stringify(f.responseBody, null, 2) %></pre>
-                      </td>
-                    </tr>
-                  <% } %>
-                </tbody>
-              </table>
-            <% } %>
+
           </div>
-
           <!-- ---- end tab ---- -->
-
 
         </div>
       </div>
