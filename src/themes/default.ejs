@@ -980,6 +980,29 @@
 
           <!-- ---- end tab ---- -->
 
+          <input type="radio" name="tabs" id="tabsix">
+          <label for="tabsix">
+            <i class="fas fa-info"></i> Logs
+          </label>
+
+          <div class="tab extLogsTab">
+          <h4>External Logs</h4>
+
+          <% if (data.externalLogs?.length) { %>
+            <table>
+              <tbody>
+                <% for (const f of data.externalLogs) { %>
+                  <tr>
+                    <td><%= f %></td>
+                  </tr>
+                <% } %>
+              </tbody>
+            </table>
+          <% } else { %>
+            <p>No external logs available</p>
+          <% } %>
+          </div>
+
         </div>
       </div>
       
