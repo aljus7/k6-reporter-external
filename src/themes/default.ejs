@@ -439,16 +439,16 @@
         font-size: 0.8rem;
       }
 
-      .extFailsTab table {
+      .extLogsTab table {
         width: 100%;
       }
 
-      .extFailsTab td {
+      .extLogsTab td {
         max-width: 400px;      
         vertical-align: top;
       }
 
-      .extFailsTab pre {
+      .extLogsTab pre {
         white-space: pre-wrap;     
         word-wrap: break-word;     
         overflow-wrap: anywhere;  
@@ -456,30 +456,30 @@
         max-width: 100%;
       }
 
-      .extFailsTab .col-time {
+      .extLogsTab .col-time {
         width: 160px;
         white-space: nowrap;
       }
 
-      .extFailsTab .col-method {
+      .extLogsTab .col-method {
         width: 70px;
         text-align: center;
         font-weight: 700;
       }
 
-      .extFailsTab .col-status {
+      .extLogsTab .col-status {
         width: 90px;
         text-align: center;
         font-weight: 700;
       }
 
-      .extFailsTab .col-url {
+      .extLogsTab .col-url {
         width: auto;
         word-break: break-all;
       }
 
-      .extFailsTab .col-method,
-      .extFailsTab .col-status {
+      .extLogsTab .col-method,
+      .extLogsTab .col-status {
         font-size: 0.85rem;
       }
 
@@ -868,15 +868,13 @@
 
           <input type="radio" name="tabs" id="tabfour">
           <label for="tabfour">
-            <i class="fas fa-bug"></i> External Failures
+            <i class="fas fa-bug"></i> Failed requests
           </label>
 
-          <div class="tab extFailsTab">
+          <div class="tab extLogsTab">
             <h4>External Request Failures</h4>
 
-            <% if (!data.externalFailures || data.externalFailures.length === 0) { %>
-              <p class="note">✅ No external failures recorded.</p>
-            <% } else { %>
+            <% if (data.externalRequests?.length) { %>
               <table>
                 <thead>
                   <tr>
@@ -889,7 +887,8 @@
                   </tr>
                 </thead>
                 <tbody>
-                  <% for (const f of data.externalFailures) { %>
+                  <% for (const f of data.externalRequests) { %>
+                    <% if (String(f.status).startsWith('2')) { continue; } %>
                     <tr class="failed">
                       <td class="col-time"><%= new Date(f.timestamp).toLocaleString() %></td>
                       <td class="col-method"><b><%= f.method %></b></td>
@@ -924,6 +923,62 @@
 
           <!-- ---- end tab ---- -->
 
+          <input type="radio" name="tabs" id="tabfive">
+          <label for="tabfive">
+            <i class="fas fa-check"></i> Passed requests
+          </label>
+
+          <div class="tab extLogsTab">
+            <h4>External Passed Requests</h4>
+
+            <% if (data.externalRequests?.length) { %>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Time</th>
+                    <th>Method</th>
+                    <th>URL</th>
+                    <th>Status</th>
+                    <th>Request Body</th>
+                    <th>Response Body</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <% for (const f of data.externalRequests) { %>
+                    <% if (!(String(f.status).startsWith('2'))) { continue; } %>
+                    <tr class="good">
+                      <td class="col-time"><%= new Date(f.timestamp).toLocaleString() %></td>
+                      <td class="col-method"><b><%= f.method %></b></td>
+                      <td class="col-url"><%= f.url %></td>
+                      <td class="col-status"><%= f.status %></td>
+                      <td>
+                        <% if (f.requestBody) { %>
+                          <details>
+                            <summary>Show</summary>
+                            <pre><%= JSON.stringify(f.requestBody, null, 2) %></pre>
+                          </details>
+                        <% } else { %>
+                          <em>null</em>
+                        <% } %>
+                      </td>
+                      <td>
+                        <% if (f.responseBody) { %>
+                          <details>
+                            <summary>Show</summary>
+                            <pre><%= JSON.stringify(f.responseBody, null, 2) %></pre>
+                          </details>
+                        <% } else { %>
+                          <em>null</em>
+                        <% } %>
+                      </td>
+                    </tr>
+                  <% } %>
+                </tbody>
+              </table>
+            <% } %>
+          </div>
+
+          <!-- ---- end tab ---- -->
 
         </div>
       </div>
