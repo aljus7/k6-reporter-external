@@ -8,6 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title><%= title %></title>
@@ -27,7 +28,7 @@
       }
       
       .container {
-        max-width: 1400px;
+        max-width: 1500px;
         margin: 0 auto;
         background: #ffffff;
         border-radius: 16px;
@@ -483,6 +484,17 @@
         font-size: 0.85rem;
       }
 
+      .sortResp {
+        cursor: pointer;
+        user-select: none;
+      }
+
+      .respArrow {
+        font-size: 0.8em;
+        margin-left: 4px;
+        opacity: 0.7;
+      }
+
       @media (max-width: 768px) {
         body {
           padding: 0.5rem;
@@ -879,6 +891,7 @@
                 <thead>
                   <tr>
                     <th>Time</th>
+                    <th id="sortRespBad" class="sortResp">Resp.Time(ms) <span id="respArrowBad" class="respArrow">▲</span></th>
                     <th>Method</th>
                     <th>URL</th>
                     <th>Status</th>
@@ -888,9 +901,10 @@
                 </thead>
                 <tbody>
                   <% for (const f of data.externalRequests) { %>
-                    <% if (String(f.status).startsWith('2')) { continue; } %>
+                    <% if (f.averages === true || String(f.status).startsWith('2') || !f.responseBody) { continue; } %>
                     <tr class="failed">
                       <td class="col-time"><%= new Date(f.timestamp).toLocaleString() %></td>
+                      <td class="col-time"><%= f.durationTiming.toFixed(2) %></td>
                       <td class="col-method"><b><%= f.method %></b></td>
                       <td class="col-url"><%= f.url %></td>
                       <td class="col-status"><%= f.status %></td>
@@ -932,10 +946,25 @@
             <h4>External Passed Requests</h4>
 
             <% if (data.externalRequests?.length) { %>
+              <%
+                let timingCalculatedAverages = new Map();
+                for (const f of data.externalRequests) {
+                  if (f.calculatedAverage === true && f.good === true) {
+                    timingCalculatedAverages.set(f.id, f.averageValue);
+                  }
+                }
+
+                data.externalRequests.sort((a, b) => {
+                  const avgA = timingCalculatedAverages.get(a.id) || 0;
+                  const avgB = timingCalculatedAverages.get(b.id) || 0;
+                  return avgA - avgB; // ascending
+                });
+              %>
               <table>
                 <thead>
                   <tr>
                     <th>Time</th>
+                    <th id="sortRespGood" class="sortResp">Avg. <br> Resp.Time(ms) <span id="respArrowGood" class="respArrow">▲</span></th>
                     <th>Method</th>
                     <th>URL</th>
                     <th>Status</th>
@@ -945,9 +974,10 @@
                 </thead>
                 <tbody>
                   <% for (const f of data.externalRequests) { %>
-                    <% if (!(String(f.status).startsWith('2'))) { continue; } %>
+                    <% if (f.averages === true || !(String(f.status).startsWith('2'))) { continue; } %>
                     <tr class="good">
                       <td class="col-time"><%= new Date(f.timestamp).toLocaleString() %></td>
+                      <td class="col-time"><%= timingCalculatedAverages.get(f.id) != null ? timingCalculatedAverages.get(f.id).toFixed(2) : "null" %></td>
                       <td class="col-method"><b><%= f.method %></b></td>
                       <td class="col-url"><%= f.url %></td>
                       <td class="col-status"><%= f.status %></td>
@@ -1002,11 +1032,229 @@
             <p>No external logs available</p>
           <% } %>
           </div>
+          <!-- ---- end tab ---- -->
 
+          <input type="radio" name="tabs" id="tabseven">
+          <label for="tabseven">
+            <i class="fas fa-chart-line"></i> Graph
+          </label>
+
+          <div class="tab extLogsTab">
+          <h4>Graph</h4>
+            <canvas id="Chart"></canvas>
+          </div>
         </div>
       </div>
       
       <footer>K6 Reporter v<%= version %> - Ben Coleman 2025 · <a href="https://github.com/benc-uk/k6-reporter">GitHub</a></footer>
     </div>
+
+
+    <%
+      var failedResponses = [];
+      var averageRespTimes = [];
+      var currentRequestAmount = [];
+      let inputRamp = data.setup_data.ramp1;
+      var runningTotal = 0;
+      for (let ramp of inputRamp) {
+        let seconds = 0;
+        if (ramp.duration.includes("s")) {
+          seconds = Number(ramp.duration.replace(/[^0-9]+/g, ""));
+        } else if (ramp.duration.includes("m")) {
+          seconds = Number(ramp.duration.replace(/[^0-9]+/g, "")) * 60;
+        }
+
+        runningTotal += seconds;
+      }
+      
+      let testStart = +data.setup_data.testStart;
+      let avgSum = 0;
+      let avgCount = 0;
+      let numRequests = 0;
+      for (let i = 0; i < runningTotal; i++) {
+        failedResponses[i] = 0;
+        avgCount = 0;
+        avgSum = 0;
+        numRequests = 0;
+        for (let req of data.externalRequests) {
+          if ((req.dateNow - testStart < i * 1000) && !(String(req.status).startsWith('2'))) {
+            failedResponses[i]++;
+          } else if (req.dateNow - testStart < i * 1000) {
+            avgCount++;
+            avgSum+=req.durationTiming;
+          }
+          if (req.dateNow - testStart < i * 1000) {
+            numRequests++;
+          }
+        }
+        averageRespTimes[i] = avgSum/avgCount;
+        currentRequestAmount[i] = numRequests;
+      }
+    %>
+
+    <script>
+      const ctx = document.getElementById('Chart');
+      const inputRamp = <%- JSON.stringify(data.setup_data.ramp1) %>;
+      const externalRequests = [];
+
+
+
+      let targetWorkers = [];
+      let durations = Array.from({ length: <%=runningTotal%> }, (_, i) => i);
+      let runningTotal = <%=runningTotal%>;
+      let targetWorkersSecondsIntervals = new Map();
+      let secondsWorkers = 0;
+      for (let ramp of inputRamp) {
+        let seconds = 0;  
+        if (ramp.duration.includes("s")) {
+            seconds = Number(ramp.duration.replace(/[^0-9]+/g, ""));
+          } else if (ramp.duration.includes("m")) {
+            seconds = Number(ramp.duration.replace(/[^0-9]+/g, "")) * 60;
+          }
+          secondsWorkers += seconds;
+          targetWorkersSecondsIntervals.set(secondsWorkers, ramp.target)
+      }
+      
+      for (let i = 0; i < runningTotal; i++) {
+        let tar = 0;
+        for ([sec, target] of targetWorkersSecondsIntervals) {
+          if (sec > i) {
+            tar = target;
+            break;
+          }
+        }
+        targetWorkers[i] = tar;
+      }
+
+      new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: durations,
+          datasets: [
+            {
+              label: 'VUs',
+              data: targetWorkers,
+              backgroundColor: 'rgba(255, 159, 64, 0.6)',
+              borderColor: 'rgba(255, 159, 64, 1)',
+              borderWidth: 1,
+              yAxisID: 'yRightVu'
+            },
+            {
+              label: 'Request Amount',
+              data: <%- JSON.stringify(currentRequestAmount) %>,
+              backgroundColor: 'rgba(255, 159, 64, 0.6)',
+              borderColor: 'rgba(255, 159, 64, 1)',
+              borderWidth: 1,
+              yAxisID: 'yRightReqAmount'
+            },
+            {
+              type: 'line',
+              label: 'Response Times (ms)',
+              data: <%- JSON.stringify(averageRespTimes) %>,
+              borderColor: 'rgba(54, 162, 235, 1)',
+              borderWidth: 3,
+              stepped: true,
+              fill: false,
+              yAxisID: 'yRespTimes'
+            },
+            {
+              type: 'line',
+              label: 'Failed (diagonal)',
+              data: <%- JSON.stringify(failedResponses) %>,
+              borderColor: 'rgba(255, 99, 132, 1)',
+              borderWidth: 2,
+              borderDash: [5, 5],
+              fill: false,
+              yAxisID: 'yFails'
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          scales: {
+            yFails: {
+              position: 'left',
+              beginAtZero: true,
+              title: { display: true, text: 'Fails' },
+              grid: { drawOnChartArea: false }
+            },
+            yRespTimes : {
+              position: 'left',
+              beginAtZero: true,
+              title: { display: true, text: 'Response Times' },
+              grid: { drawOnChartArea: false }
+            },
+            yRightVu: {
+              position: 'right',
+              beginAtZero: true,
+              title: { display: true, text: 'VUs' },
+              grid: { drawOnChartArea: false } // keeps grids from overlapping
+            },
+            yRightReqAmount: {
+              position: 'right',
+              beginAtZero: true,
+              title: { display: true, text: 'Num Requests' },
+              grid: { drawOnChartArea: false } // keeps grids from overlapping
+            },
+            x: {
+              title: { display: true, text: 't (s)' }
+            }
+          }
+        }
+      });
+    </script>
+
+    <script>
+      document.addEventListener("DOMContentLoaded", () => {
+        let ascGood = true;
+        let ascBad = true;
+
+        let header = null;
+        const headerGood = document.getElementById("sortRespGood");
+        const headerBad = document.getElementById("sortRespBad");
+        const arrowGood = document.getElementById("respArrowGood");
+        const arrowBad = document.getElementById("respArrowBad");
+
+        headerGood.style.cursor = "pointer";
+        headerBad.style.cursor = "pointer";
+
+        headerGood.addEventListener("click", () => {
+          sortTableTimes(ascGood);
+          ascGood = !ascGood;
+          arrowGood.textContent = ascGood ? "▲" : "▼";
+        });
+
+        headerBad.addEventListener("click", () => {
+          sortTableTimes(ascBad);
+          ascBad = !ascBad;
+          arrowBad.textContent = ascBad ? "▲" : "▼";
+        });
+
+        function sortTableTimes(asc) {
+          // 1. Find the active tab
+          const activeTab = document.querySelector('input[name="tabs"]:checked');
+          if (!activeTab) return;
+
+          // 2. Find the tab content <div>
+          const label = document.querySelector(`label[for="${activeTab.id}"]`);
+          const tabContent = label.nextElementSibling;
+
+          const table = tabContent.querySelector("table");
+          if (!table) return;
+
+          const tbody = table.querySelector("tbody");
+          const rows = Array.from(tbody.querySelectorAll("tr"));
+
+          rows.sort((a, b) => {
+            const valA = parseFloat(a.children[1].innerText) || 0;
+            const valB = parseFloat(b.children[1].innerText) || 0;
+            return asc ? valB - valA : valA - valB;
+          });
+
+          rows.forEach(r => tbody.appendChild(r));
+        }
+        
+      });
+    </script>
   </body>
 </html>
