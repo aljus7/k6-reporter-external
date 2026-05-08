@@ -462,6 +462,11 @@
         white-space: nowrap;
       }
 
+      .extLogsTab .col-avg {
+        width: 100px;
+        white-space: nowrap;
+      }
+
       .extLogsTab .col-method {
         width: 70px;
         text-align: center;
@@ -959,12 +964,20 @@
                   const avgB = timingCalculatedAverages.get(b.id) || 0;
                   return avgA - avgB; // ascending
                 });
+
+                let timingCalculatedAveragesMed = new Map();
+                for (const f of data.externalRequests) {
+                  if (f.calculatedAverage === true && f.good === true) {
+                    timingCalculatedAveragesMed.set(f.id, f.medianValue);
+                  }
+                }
               %>
               <table>
                 <thead>
                   <tr>
                     <th>Time</th>
                     <th id="sortRespGood" class="sortResp">Avg. <br> Resp.Time(ms) <span id="respArrowGood" class="respArrow">▲</span></th>
+                    <th id="sortMedianRespGood" class="sortResp">Median. <br> Resp.Time(ms) <span id="respArrowGoodMed" class="respArrow">▲</span></th>
                     <th>Method</th>
                     <th>URL</th>
                     <th>Status</th>
@@ -977,7 +990,8 @@
                     <% if (f.averages === true || !(String(f.status).startsWith('2'))) { continue; } %>
                     <tr class="good">
                       <td class="col-time"><%= new Date(f.timestamp).toLocaleString() %></td>
-                      <td class="col-time"><%= timingCalculatedAverages.get(f.id) != null ? timingCalculatedAverages.get(f.id).toFixed(2) : "null" %></td>
+                      <td class="col-avg"><%= timingCalculatedAverages.get(f.id) != null ? timingCalculatedAverages.get(f.id).toFixed(2) : "null" %></td>
+                      <td class="col-avg"><%= timingCalculatedAveragesMed.get(f.id) != null ? timingCalculatedAveragesMed.get(f.id).toFixed(2) : "null" %></td>
                       <td class="col-method"><b><%= f.method %></b></td>
                       <td class="col-url"><%= f.url %></td>
                       <td class="col-status"><%= f.status %></td>
@@ -1051,8 +1065,35 @@
 
 
     <%
+      function percentile(values, p) {
+        if (!values.length) return null;
+
+        const sorted = [...values].sort((a, b) => a - b);
+        const k = (sorted.length - 1) * p;
+        const f = Math.floor(k);
+        const c = Math.ceil(k);
+
+        if (f === c) return sorted[f];
+
+        return sorted[f] + (k - f) * (sorted[c] - sorted[f]);
+      }
+
+      function median(values) {
+        if (values.length === 0) return null;
+
+        const sorted = [...values].sort((a, b) => a - b);
+        const mid = Math.floor(sorted.length / 2);
+
+        return sorted.length % 2 !== 0
+          ? sorted[mid]
+          : (sorted[mid - 1] + sorted[mid]) / 2;
+      }
+
       var failedResponses = [];
+      var failedResponsesPerSec = [];
       var averageRespTimes = [];
+      var medResponseTimesPerSec = [];
+      var top5LongestRespTimesPerSec = [];
       var currentRequestAmount = [];
       let inputRamp = data.setup_data.ramp1;
       var runningTotal = 0;
@@ -1073,6 +1114,7 @@
       let numRequests = 0;
       for (let i = 0; i < runningTotal; i++) {
         failedResponses[i] = 0;
+        failedResponsesPerSec[i] = 0;
         avgCount = 0;
         avgSum = 0;
         numRequests = 0;
@@ -1089,6 +1131,28 @@
         }
         averageRespTimes[i] = avgSum/avgCount;
         currentRequestAmount[i] = numRequests;
+
+        failedResponsesPerSec[i] = 0;
+        for (let req of data.externalRequests) {
+          const t = req.dateNow - testStart;
+          if (t >= i * 1000 && t < (i + 1) * 1000) {
+            if (!String(req.status).startsWith('2')) {
+              failedResponsesPerSec[i]++;
+            }
+          }
+        }
+
+
+        let respTimesPerThisSecond = [];
+        for (let req of data.externalRequests) {
+          const t = req.dateNow - testStart;
+          if (t >= i * 1000 && t < (i + 1) * 1000) {
+            respTimesPerThisSecond.push(req.durationTiming);
+          }
+        }
+        medResponseTimesPerSec[i] = median(respTimesPerThisSecond);
+        top5LongestRespTimesPerSec[i] = percentile(respTimesPerThisSecond, 0.95);
+
       }
     %>
 
@@ -1132,69 +1196,160 @@
           labels: durations,
           datasets: [
             {
-              label: 'VUs',
+              label: 'a): VUs',
               data: targetWorkers,
+              order: 0,
               backgroundColor: 'rgba(255, 159, 64, 0.6)',
-              borderColor: 'rgba(255, 159, 64, 1)',
+              borderColor: 'rgba(255, 159, 64, 0.6)',
               borderWidth: 1,
-              yAxisID: 'yRightVu'
+              yAxisID: 'yRightVu',
+              z: 0
             },
             {
-              label: 'Request Amount',
+              label: 'b): Request Amount',
               data: <%- JSON.stringify(currentRequestAmount) %>,
-              backgroundColor: 'rgba(255, 159, 64, 0.6)',
-              borderColor: 'rgba(255, 159, 64, 1)',
+              order: 0,
+              backgroundColor: 'rgba(255, 120, 40, 0.6)',
+              borderColor: 'rgba(255, 120, 40, 0.6)',
               borderWidth: 1,
-              yAxisID: 'yRightReqAmount'
+              yAxisID: 'yRightReqAmount',
+              z: 0
             },
             {
               type: 'line',
-              label: 'Response Times (ms)',
+              label: 'c): Averaged Response Times (ms)',
               data: <%- JSON.stringify(averageRespTimes) %>,
+              order: 1,
               borderColor: 'rgba(54, 162, 235, 1)',
               borderWidth: 3,
-              stepped: true,
               fill: false,
-              yAxisID: 'yRespTimes'
+              yAxisID: 'yRespTimes',
+              z: 10
             },
             {
               type: 'line',
-              label: 'Failed (diagonal)',
+              label: 'd): Absolute Response Times (ms) [scatter]',
+              showLine: false,
+              data: <%- JSON.stringify(medResponseTimesPerSec) %>,
+              order: 1,
+              borderDash: [5, 5],
+              borderColor: 'rgba(115, 196, 240, 1)',
+              borderWidth: 3,
+              fill: false,
+              yAxisID: 'yRespTimesAbsolute',
+              z: 10
+            },
+            {
+              type: 'line',
+              label: 'd): 5% High Absolute Response Times (ms) [scatter]',
+              hidden: true,
+              showLine: false,
+              data: <%- JSON.stringify(top5LongestRespTimesPerSec) %>,
+              order: 1,
+              borderDash: [5, 5],
+              borderColor: 'rgba(20, 0, 255, 1)',
+              borderWidth: 3,
+              fill: false,
+              yAxisID: 'yRespTimesAbsolute',
+              z: 10
+            },
+            {
+              type: 'line',
+              label: 'e): Failed',
               data: <%- JSON.stringify(failedResponses) %>,
+              order: 1,
               borderColor: 'rgba(255, 99, 132, 1)',
               borderWidth: 2,
-              borderDash: [5, 5],
               fill: false,
-              yAxisID: 'yFails'
+              yAxisID: 'yFails',
+              z: 10
+            },
+            {
+              type: 'line',
+              label: 'f): Failed Absolute [scatter]',
+              showLine: false,
+              data: <%- JSON.stringify(failedResponsesPerSec) %>,
+              order: 1,
+              borderDash: [5, 5],
+              borderColor: 'rgba(171, 0, 32, 1)',
+              borderWidth: 2,
+              fill: false,
+              yAxisID: 'yFailsAbsolute',
+              z: 10
             }
           ]
         },
         options: {
           responsive: true,
+
+          plugins: {
+            legend: {
+              onClick: function (e, legendItem, legend) {
+                const chart = legend.chart;
+                const index = legendItem.datasetIndex;
+                const dataset = chart.data.datasets[index];
+
+                // Toggle dataset visibility
+                dataset.hidden = !dataset.hidden;
+
+                // Axis used by this dataset
+                const axisId = dataset.yAxisID;
+
+                // Check if ANY visible dataset still uses this axis
+                const axisStillUsed = chart.data.datasets.some(ds =>
+                  !ds.hidden && ds.yAxisID === axisId
+                );
+
+                // Toggle axis visibility
+                chart.options.scales[axisId].display = axisStillUsed;
+
+                chart.update();
+              }
+            }
+          },
+
           scales: {
             yFails: {
               position: 'left',
               beginAtZero: true,
-              title: { display: true, text: 'Fails' },
-              grid: { drawOnChartArea: false }
+              title: { display: true, text: 'e): Fails' },
+              grid: { drawOnChartArea: false },
+              display: true
             },
-            yRespTimes : {
+            yFailsAbsolute: {
               position: 'left',
               beginAtZero: true,
-              title: { display: true, text: 'Response Times' },
-              grid: { drawOnChartArea: false }
+              title: { display: true, text: 'f): Absolute Fails to 0' },
+              grid: { drawOnChartArea: false },
+              display: true
+            },
+            yRespTimes: {
+              position: 'left',
+              beginAtZero: true,
+              title: { display: true, text: 'c): Response Times' },
+              grid: { drawOnChartArea: false },
+              display: true
+            },
+            yRespTimesAbsolute: {
+              position: 'left',
+              beginAtZero: true,
+              title: { display: true, text: 'd): Absolute Response Times' },
+              grid: { drawOnChartArea: false },
+              display: true
             },
             yRightVu: {
               position: 'right',
               beginAtZero: true,
-              title: { display: true, text: 'VUs' },
-              grid: { drawOnChartArea: false } // keeps grids from overlapping
+              title: { display: true, text: 'a): VUs' },
+              grid: { drawOnChartArea: false },
+              display: true
             },
             yRightReqAmount: {
               position: 'right',
               beginAtZero: true,
-              title: { display: true, text: 'Num Requests' },
-              grid: { drawOnChartArea: false } // keeps grids from overlapping
+              title: { display: true, text: 'b): Num Requests' },
+              grid: { drawOnChartArea: false },
+              display: true
             },
             x: {
               title: { display: true, text: 't (s)' }
@@ -1208,29 +1363,38 @@
       document.addEventListener("DOMContentLoaded", () => {
         let ascGood = true;
         let ascBad = true;
+        let ascGoodMed = true;
 
         let header = null;
         const headerGood = document.getElementById("sortRespGood");
         const headerBad = document.getElementById("sortRespBad");
+        const headerGoodMed = document.getElementById("sortMedianRespGood");
         const arrowGood = document.getElementById("respArrowGood");
+        const arrowGoodMed = document.getElementById("respArrowGoodMed");
         const arrowBad = document.getElementById("respArrowBad");
 
         headerGood.style.cursor = "pointer";
         headerBad.style.cursor = "pointer";
 
         headerGood.addEventListener("click", () => {
-          sortTableTimes(ascGood);
+          sortTableTimes(ascGood, 1);
           ascGood = !ascGood;
           arrowGood.textContent = ascGood ? "▲" : "▼";
         });
 
         headerBad.addEventListener("click", () => {
-          sortTableTimes(ascBad);
+          sortTableTimes(ascBad, 1);
           ascBad = !ascBad;
           arrowBad.textContent = ascBad ? "▲" : "▼";
         });
 
-        function sortTableTimes(asc) {
+        headerGoodMed.addEventListener("click", () => {
+          sortTableTimes(ascGoodMed, 2);
+          ascGoodMed = !ascGoodMed;
+          arrowGoodMed.textContent = ascGoodMed ? "▲" : "▼";
+        });
+
+        function sortTableTimes(asc, headerNum) {
           // 1. Find the active tab
           const activeTab = document.querySelector('input[name="tabs"]:checked');
           if (!activeTab) return;
@@ -1246,8 +1410,8 @@
           const rows = Array.from(tbody.querySelectorAll("tr"));
 
           rows.sort((a, b) => {
-            const valA = parseFloat(a.children[1].innerText) || 0;
-            const valB = parseFloat(b.children[1].innerText) || 0;
+            const valA = parseFloat(a.children[headerNum].innerText) || 0;
+            const valB = parseFloat(b.children[headerNum].innerText) || 0;
             return asc ? valB - valA : valA - valB;
           });
 
